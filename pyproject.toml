@@ -100,9 +100,10 @@ max-line-length = "88"
 max-module-lines = "9000" # Right, over nine thousand!
 
 [tool.pylint.STRING_QUOTES]
-docstring-quote = "double"
-string-quote = "double-avoid-escape"
-triple-quote = "double"
+# C0116: E0015: Unrecognized option found: docstring-quote, string-quote, triple-quote (unrecognized-option)
+#docstring-quote = "double"
+#string-quote = "double-avoid-escape"
+#triple-quote = "double"
 
 [tool.pylint.PYLINT_DJANGO]
 # NOTE: When Pytest runs Pylint this setting is overwritten by the

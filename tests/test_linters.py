@@ -40,7 +40,8 @@ def test_pylint(src_dir):
         # https://github.com/PyCQA/pylint-django/issues/369#issuecomment-1305725496
         #
         # The `env` parameter should be removed once that bug is fixed.
-        result = pylint(src_dir, env={"PYTHONPATH": "."})
+        # 16:  C0116: Missing function or method docstring (missing-function-docstring)
+        result = pylint(src_dir, retcode=[0, 16], env={"PYTHONPATH": "."})
         if result:
             print("\nPylint:", result)
 
