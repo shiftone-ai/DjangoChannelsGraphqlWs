@@ -17,6 +17,7 @@ dependencies = [
     "graphene>=3,<4",
     "graphql-core==3.2.3",
     "msgpack>=1,<2",
+    "pytest-asyncio>=0.23.8",
 ]
 
 [project.urls]
@@ -63,6 +64,7 @@ profile = "black"
 # https://github.com/PyCQA/pylint-django/issues/276
 #jobs = "0"
 jobs = "1"
+
 # Disable Pylint-quotes until its issue is fixed:
 # https://github.com/edaniszewski/pylint-quotes/issues/29.
 ## load-plugins = "pylint_quotes,pylint_django"
