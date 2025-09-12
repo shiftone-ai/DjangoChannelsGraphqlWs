@@ -7,13 +7,13 @@ name = "django-channels-graphql-ws"
 version = "v1.0.0rc7"
 description = "Django Channels based WebSocket GraphQL server with Graphene-like subscriptions"
 authors = [{ name = "Alexander A. Prokhorov", email = "alexander.prokhorov@datadvance.net" }]
-requires-python = ">=3.8.0,<4"
+requires-python = ">=3.10.0,<4"
 license = "MIT"
 dependencies = [
     "aiohttp>=3,<4",
     "asgiref>=3,<4",
     "channels>=4,<5",
-    "Django>=4,<5",
+    "django>=5",
     "graphene>=3,<4",
     "graphql-core==3.2.3",
     "msgpack>=1,<2",
