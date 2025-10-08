@@ -38,6 +38,10 @@ import pytest
 import channels_graphql_ws
 
 
+def to_tasks(coroutines):
+    return [asyncio.create_task(coro) for coro in coroutines]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("subprotocol", ["graphql-transport-ws", "graphql-ws"])
 async def test_concurrent_queries(gql, subprotocol):
@@ -128,8 +132,9 @@ async def test_heavy_load(gql, sync_resolvers, requests_number, subprotocol):
         receive_waitlist += [client.transport.receive(), client.transport.receive()]
 
     start_ts = time.monotonic()
-    await asyncio.wait(send_waitlist)
-    responses, _ = await asyncio.wait(receive_waitlist)
+    await asyncio.wait(to_tasks(send_waitlist))
+    responses, _ = await asyncio.wait(to_tasks(receive_waitlist))
+
     time_spent = time.monotonic() - start_ts
     print(
         f"RPS: { (requests_number / time_spent) if time_spent != 0 else '∞'}"
@@ -374,7 +379,7 @@ async def test_subscribe_and_many_unsubscribes(
             break
 
     print("Let's run all the tasks concurrently.")
-    _, pending = await asyncio.wait(awaitables, timeout=wait_timeout)
+    _, pending = await asyncio.wait(to_tasks(awaitables), timeout=wait_timeout)
 
     # Check that the server withstood the flow of subscribe-unsubscribe
     # messages and successfully responded to all messages.

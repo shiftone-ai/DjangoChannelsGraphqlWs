@@ -102,7 +102,7 @@ class GraphqlWsTransportAiohttp(GraphqlWsTransport):
             self._process_messages(connected, timeout or self.TIMEOUT, subprotocol)
         )
         await asyncio.wait(
-            [connected.wait(), self._message_processor],
+            [asyncio.create_task(connected.wait()), self._message_processor],
             return_when=asyncio.FIRST_COMPLETED,
         )
         if self._message_processor.done():
