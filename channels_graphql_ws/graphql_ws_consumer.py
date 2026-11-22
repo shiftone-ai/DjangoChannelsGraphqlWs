@@ -1439,8 +1439,17 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
         """
         if isinstance(error, graphql.error.GraphQLError):
             if error.extensions and "code" not in error.extensions:
-                if error.original_error:
-                    error.extensions["code"] = type(error.original_error).__name__
+                cause = error.original_error
+                # GraphQL-core 3.2.14 wraps the variable coercion errors,
+                # which have no path, in one more GraphQLError.
+                if (
+                    error.path is None
+                    and isinstance(cause, graphql.error.GraphQLError)
+                    and cause.original_error
+                ):
+                    cause = cause.original_error
+                if cause:
+                    error.extensions["code"] = type(cause).__name__
             return error.formatted
 
         # Usually the GraphQL-core library wraps any exception with

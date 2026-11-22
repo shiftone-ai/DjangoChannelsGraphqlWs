@@ -300,6 +300,32 @@ async def test_connection_error(gql, subprotocol):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("subprotocol", ["graphql-transport-ws", "graphql-ws"])
+async def test_variable_error_code(gql, subprotocol):
+    """Test that the code of an invalid variable is the exception name."""
+
+    print("Establish & initialize WebSocket GraphQL connection.")
+    client = gql(query=VariableQuery, subprotocol=subprotocol)
+    await client.connect_and_init()
+
+    print("Check that the code is the name of the exception raised by the scalar.")
+    msg_id = await client.start(
+        query="query op_name($name: ItemName) { value(name: $name) }",
+        variables={"name": "invalid"},
+        operation_name="op_name",
+    )
+    with pytest.raises(channels_graphql_ws.GraphqlWsResponseError) as exc_info:
+        await client.receive_next(msg_id)
+    error = exc_info.value.response["payload"]["errors"][0]
+    assert error["extensions"] == {"field": "name", "code": "InvalidInput"}
+    await client.receive_complete(msg_id)
+
+    print("Disconnect and wait the application to finish gracefully.")
+    await client.assert_no_messages()
+    await client.finalize()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("subprotocol", ["graphql-transport-ws", "graphql-ws"])
 async def test_subscribe_return_value(gql, subprotocol):
     """Assure the return value of the `subscribe` method is checked.
 
@@ -360,6 +386,27 @@ class Query(graphene.ObjectType):
         if issue_error:
             raise RuntimeError(Query.VALUE)
         return Query.VALUE
+
+
+class InvalidInput(ValueError):
+    """Error raised by a scalar with details for the client."""
+
+    extensions = {"field": "name"}
+
+
+class ItemName(graphene.Scalar):
+    """Scalar which rejects any value."""
+
+    @staticmethod
+    def parse_value(value):
+        """Reject the value."""
+        raise InvalidInput(value)
+
+
+class VariableQuery(graphene.ObjectType):
+    """GraphQL query with a custom scalar argument."""
+
+    value = graphene.String(args={"name": graphene.Argument(ItemName)})
 
 
 class TestSubscription(channels_graphql_ws.Subscription):
