@@ -1438,18 +1438,23 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
         use a GraphQLError based classes for your exceptions.
         """
         if isinstance(error, graphql.error.GraphQLError):
+            # GraphQL-core 3.2.14 reports an invalid variable with the
+            # coercion error as its cause, while 3.2.3 used the cause of
+            # that coercion error. Rebuild the error as 3.2.3 did to keep
+            # the "extensions" sent to clients.
+            if (
+                error.nodes
+                and isinstance(error.nodes[0], graphql.VariableDefinitionNode)
+                and isinstance(error.original_error, graphql.error.GraphQLError)
+            ):
+                error = graphql.error.GraphQLError(
+                    error.message,
+                    error.nodes,
+                    original_error=error.original_error.original_error,
+                )
             if error.extensions and "code" not in error.extensions:
-                cause = error.original_error
-                # GraphQL-core 3.2.14 wraps the variable coercion errors,
-                # which have no path, in one more GraphQLError.
-                if (
-                    error.path is None
-                    and isinstance(cause, graphql.error.GraphQLError)
-                    and cause.original_error
-                ):
-                    cause = cause.original_error
-                if cause:
-                    error.extensions["code"] = type(cause).__name__
+                if error.original_error:
+                    error.extensions["code"] = type(error.original_error).__name__
             return error.formatted
 
         # Usually the GraphQL-core library wraps any exception with
