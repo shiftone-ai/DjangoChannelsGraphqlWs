@@ -1337,7 +1337,8 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
                     **(
                         {
                             "errors": [  # type: ignore
-                                self._format_error(e) for e in errors
+                                self._format_error(self._as_graphql_core_323_error(e))
+                                for e in errors
                             ]
                         }
                         if errors
@@ -1392,6 +1393,37 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
         await self.send_json({"type": "complete", "id": op_id})
 
     # ---------------------------------------------------------------------- AUXILIARIES
+
+    @staticmethod
+    def _as_graphql_core_323_error(error: Exception) -> Exception:
+        """Rebuild an error of an invalid variable as GraphQL-core 3.2.3 did.
+
+        GraphQL-core 3.2.14 reports an invalid variable with the coercion
+        error as its cause, while 3.2.3 used the cause of that coercion
+        error, so the "extensions" sent to clients would change. The checks
+        follow the error that `coerce_variable_values` builds: no path, the
+        variable definition as its node, a `GraphQLError` as its cause, and
+        the message "Variable '$name' got invalid value ...; <cause>".
+        """
+        if not isinstance(error, graphql.error.GraphQLError):
+            return error
+        cause = error.original_error
+        if (
+            error.path is not None
+            or not error.nodes
+            or not isinstance(error.nodes[0], graphql.VariableDefinitionNode)
+            or not isinstance(cause, graphql.error.GraphQLError)
+        ):
+            return error
+        name = error.nodes[0].variable.name.value
+        if not (
+            error.message.startswith(f"Variable '${name}' got invalid value ")
+            and error.message.endswith(f"; {cause.message}")
+        ):
+            return error
+        return graphql.error.GraphQLError(
+            error.message, error.nodes, original_error=cause.original_error
+        )
 
     @staticmethod
     def _format_error(error: Exception) -> graphql.GraphQLFormattedError:
