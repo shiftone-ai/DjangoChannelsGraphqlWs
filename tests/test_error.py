@@ -423,6 +423,47 @@ async def test_variable_node_error_keeps_extensions(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("subprotocol", ["graphql-transport-ws", "graphql-ws"])
+async def test_confirmation_error_keeps_extensions(
+    gql: Callable[..., Any], subprotocol: str
+) -> None:
+    """Test that a confirmation error located at a variable keeps its extensions."""
+
+    operation = graphql.parse("subscription ($name: String) { field }").definitions[0]
+    assert isinstance(operation, graphql.OperationDefinitionNode)
+    error = graphql.GraphQLError(
+        "Invalid name; Name rejected by policy",
+        nodes=operation.variable_definitions[0],
+        original_error=graphql.GraphQLError("Name rejected by policy"),
+        extensions={"code": "INVALID_NAME"},
+    )
+
+    print("Establish & initialize WebSocket GraphQL connection.")
+    client = gql(
+        subscription=Subscription,
+        consumer_attrs={
+            "strict_ordering": True,
+            "confirm_subscriptions": True,
+            "subscription_confirmation_message": {"data": None, "errors": [error]},
+        },
+        subprotocol=subprotocol,
+    )
+    await client.connect_and_init()
+
+    print("Check the extensions of the error in the confirmation message.")
+    msg_id = await client.start(
+        query='subscription { test_subscription (switch: "NONE") { ok } }'
+    )
+    with pytest.raises(channels_graphql_ws.GraphqlWsResponseError) as exc_info:
+        await client.receive_next(msg_id)
+    errors = exc_info.value.response["payload"]["errors"]
+    assert errors[0]["extensions"] == {"code": "INVALID_NAME"}
+
+    print("Disconnect and wait the application to finish gracefully.")
+    await client.finalize()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("subprotocol", ["graphql-transport-ws", "graphql-ws"])
 async def test_subscribe_return_value(gql, subprotocol):
     """Assure the return value of the `subscribe` method is checked.
 
