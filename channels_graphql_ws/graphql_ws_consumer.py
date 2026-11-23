@@ -1337,7 +1337,8 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
                     **(
                         {
                             "errors": [  # type: ignore
-                                self._format_error(e) for e in errors
+                                self._format_error(self._as_graphql_core_323_error(e))
+                                for e in errors
                             ]
                         }
                         if errors
@@ -1394,6 +1395,31 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
     # ---------------------------------------------------------------------- AUXILIARIES
 
     @staticmethod
+    def _as_graphql_core_323_error(error: Exception) -> Exception:
+        """Rebuild an error of an invalid variable as GraphQL-core 3.2.3 did.
+
+        GraphQL-core 3.2.14 reports an invalid variable with the coercion
+        error as its cause, while 3.2.3 used the cause of that coercion
+        error, so the "extensions" sent to clients would change. In the
+        result of an execution, only these errors have no path, a variable
+        definition as their node, and a `GraphQLError` as their cause:
+        GraphQL-core adds the path to every error raised by resolvers.
+        """
+        if (
+            isinstance(error, graphql.error.GraphQLError)
+            and error.path is None
+            and error.nodes
+            and isinstance(error.nodes[0], graphql.VariableDefinitionNode)
+            and isinstance(error.original_error, graphql.error.GraphQLError)
+        ):
+            return graphql.error.GraphQLError(
+                error.message,
+                error.nodes,
+                original_error=error.original_error.original_error,
+            )
+        return error
+
+    @staticmethod
     def _format_error(error: Exception) -> graphql.GraphQLFormattedError:
         """Format given exception `error` to send over a network.
 
@@ -1438,22 +1464,6 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
         use a GraphQLError based classes for your exceptions.
         """
         if isinstance(error, graphql.error.GraphQLError):
-            # GraphQL-core 3.2.14 reports an invalid variable as
-            # "Variable '$name' got invalid value ...; <coercion message>"
-            # with the coercion error as its cause, while 3.2.3 used the
-            # cause of that coercion error. Rebuild the error as 3.2.3 did
-            # to keep the "extensions" sent to clients.
-            cause = error.original_error
-            if (
-                error.path is None
-                and error.nodes
-                and isinstance(error.nodes[0], graphql.VariableDefinitionNode)
-                and isinstance(cause, graphql.error.GraphQLError)
-                and error.message.endswith(f"; {cause.message}")
-            ):
-                error = graphql.error.GraphQLError(
-                    error.message, error.nodes, original_error=cause.original_error
-                )
             if error.extensions and "code" not in error.extensions:
                 if error.original_error:
                     error.extensions["code"] = type(error.original_error).__name__

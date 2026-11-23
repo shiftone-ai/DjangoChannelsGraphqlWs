@@ -387,7 +387,7 @@ async def test_variable_node_error_keeps_extensions(
             operation = graphql.parse(payload["query"]).definitions[0]
             assert isinstance(operation, graphql.OperationDefinitionNode)
             raise graphql.GraphQLError(
-                "Invalid name",
+                "Invalid name; Name rejected by policy",
                 nodes=operation.variable_definitions[0],
                 original_error=graphql.GraphQLError("Name rejected by policy"),
                 extensions={"code": "INVALID_NAME"},
