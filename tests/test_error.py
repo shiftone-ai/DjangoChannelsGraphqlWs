@@ -24,6 +24,8 @@
 # NOTE: In this file we use `strict_ordering=True` to simplify testing.
 
 import uuid
+from collections.abc import Callable
+from typing import Any, NoReturn
 
 import graphene
 import graphql
@@ -309,14 +311,19 @@ async def test_connection_error(gql, subprotocol):
         ("two-codes", {"field": "name", "code": "CAUSE_CODE"}),
     ],
 )
-async def test_variable_error_code(gql, subprotocol, value, extensions):
+async def test_variable_error_code(
+    gql: Callable[..., Any],
+    subprotocol: str,
+    value: str,
+    extensions: dict[str, str] | None,
+) -> None:
     """Test that an invalid variable keeps the extensions of its cause."""
 
     print("Establish & initialize WebSocket GraphQL connection.")
     client = gql(query=VariableQuery, subprotocol=subprotocol)
     await client.connect_and_init()
 
-    print("Check that the code is the name of the exception raised by the scalar.")
+    print("Check the extensions of the error of the invalid variable.")
     msg_id = await client.start(
         query="query op_name($name: ItemName) { value(name: $name) }",
         variables={"name": value},
@@ -334,10 +341,10 @@ async def test_variable_error_code(gql, subprotocol, value, extensions):
 
 
 @pytest.mark.asyncio
-async def test_nested_connection_error_code(gql):
+async def test_nested_connection_error_code(gql: Callable[..., Any]) -> None:
     """Test that a nested error from `on_connect` keeps its own code."""
 
-    def on_connect(self, payload):
+    def on_connect(self: Any, payload: dict[str, Any]) -> NoReturn:
         del self, payload
         raise graphql.GraphQLError(
             "Connection rejected!",
@@ -357,6 +364,59 @@ async def test_nested_connection_error_code(gql):
     resp = await client.receive(assert_type="connection_error")
     assert resp["extensions"] == {"field": "session", "code": "GraphQLError"}
     await client.wait_disconnect()
+    await client.assert_no_messages()
+    await client.finalize()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("subprotocol", ["graphql-transport-ws", "graphql-ws"])
+@pytest.mark.parametrize(
+    ("operation_name", "path"), [("Precheck", None), ("Check", ["checked"])]
+)
+async def test_variable_node_error_keeps_extensions(
+    gql: Callable[..., Any],
+    subprotocol: str,
+    operation_name: str,
+    path: list[str] | None,
+) -> None:
+    """Test that an error located at a variable keeps its extensions."""
+
+    async def on_operation(self: Any, op_id: str, payload: dict[str, Any]) -> None:
+        del self, op_id
+        if payload["operationName"] == "Precheck":
+            operation = graphql.parse(payload["query"]).definitions[0]
+            assert isinstance(operation, graphql.OperationDefinitionNode)
+            raise graphql.GraphQLError(
+                "Invalid name",
+                nodes=operation.variable_definitions[0],
+                original_error=graphql.GraphQLError("Name rejected by policy"),
+                extensions={"code": "INVALID_NAME"},
+            )
+
+    print("Establish & initialize WebSocket GraphQL connection.")
+    client = gql(
+        query=VariableNodeQuery,
+        consumer_attrs={"strict_ordering": True, "on_operation": on_operation},
+        subprotocol=subprotocol,
+    )
+    await client.connect_and_init()
+
+    print("Check the error raised by `on_operation` or by the resolver.")
+    msg_id = await client.start(
+        query=f"query {operation_name}($name: String) {{ checked(name: $name) }}",
+        variables={"name": "unsupported"},
+        operation_name=operation_name,
+    )
+    with pytest.raises(channels_graphql_ws.GraphqlWsResponseError) as exc_info:
+        await client.receive(assert_id=msg_id)
+    payload = exc_info.value.response["payload"]
+    error = (payload if isinstance(payload, list) else payload["errors"])[0]
+    assert error["extensions"] == {"code": "INVALID_NAME"}
+    assert error.get("path") == path
+    if path is not None:
+        await client.receive_complete(msg_id)
+
+    print("Disconnect and wait the application to finish gracefully.")
     await client.assert_no_messages()
     await client.finalize()
 
@@ -428,7 +488,7 @@ class Query(graphene.ObjectType):
 class InvalidInput(ValueError):
     """Error raised by a scalar with details for the client."""
 
-    def __init__(self, code=None):
+    def __init__(self, code: str | None = None) -> None:
         super().__init__("Invalid item")
         self.extensions = {"field": "name"}
         if code is not None:
@@ -439,7 +499,7 @@ class ItemName(graphene.Scalar):
     """Scalar which rejects any value."""
 
     @staticmethod
-    def parse_value(value):
+    def parse_value(value: str) -> NoReturn:
         """Reject the value in the way the value names."""
         if value == "graphql":
             raise graphql.GraphQLError("Invalid item", extensions={"field": "name"})
@@ -456,6 +516,24 @@ class VariableQuery(graphene.ObjectType):
     """GraphQL query with a custom scalar argument."""
 
     value = graphene.String(args={"name": graphene.Argument(ItemName)})
+
+
+class VariableNodeQuery(graphene.ObjectType):
+    """GraphQL query whose resolver locates its error at a variable."""
+
+    checked = graphene.String(args={"name": graphene.String()})
+
+    @staticmethod
+    def resolve_checked(
+        root: Any, info: graphql.GraphQLResolveInfo, name: str
+    ) -> NoReturn:
+        """Reject the name with an error located at the variable."""
+        del root
+        raise graphql.GraphQLError(
+            f"Unsupported name: {name}",
+            nodes=info.operation.variable_definitions[0],
+            extensions={"code": "INVALID_NAME"},
+        )
 
 
 class TestSubscription(channels_graphql_ws.Subscription):
