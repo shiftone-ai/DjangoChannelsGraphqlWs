@@ -15,7 +15,7 @@ dependencies = [
     "channels>=4,<5",
     "django>=5",
     "graphene>=3,<4",
-    "graphql-core==3.2.3",
+    "graphql-core==3.2.14",
     "msgpack>=1,<2",
     "pytest-asyncio>=0.23.8",
 ]
